@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사과 게임</title>
+<style>
+  :root{
+    --bg:#0f1a15; --board:#152219; --cell:#565f75; --cell-border:#8993ab;
+    --apple:#ff5c5c; --apple-glow:#ff2e2e; --leaf:#4ade80;
+    --text:#e8eaed; --sub:#8a8f98; --ok:#4ade80; --bad:#ff6b4a;
+    --cell-text:#fbfbfd;
+    --apple-light:#ff9187; --apple-dark:#c23636; --stem:#7a4a24;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overflow:hidden; -webkit-user-select:none; user-select:none;
+  }
+  body{
+    display:flex; flex-direction:column; align-items:center;
+    padding:16px 12px; height:100vh;
+  }
+  h1{font-size:16px; font-weight:600; letter-spacing:1px; margin:0 0 4px; color:var(--apple);
+     text-shadow:0 0 12px rgba(255,92,92,.5); flex:none;}
+  .hud{display:flex; gap:20px; margin-bottom:14px; font-size:13px; color:var(--sub); flex:none;}
+  .hud b{color:var(--text); font-size:15px;}
+  .hud .time-warn{color:var(--bad);}
+  .board-area{
+    flex:1 1 auto; min-height:0; width:100%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .board-wrap{
+    position:relative; background:var(--board); border-radius:14px; padding:8px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); border:1px solid #22262f;
+    touch-action:none;
+  }
+  #board{
+    position:relative; display:grid; gap:3px; width:100%;
+  }
+  .apple{
+    position:relative; display:flex; align-items:center; justify-content:center;
+    aspect-ratio:1;
+    background:radial-gradient(circle at 33% 28%, var(--apple-light), var(--apple) 55%, var(--apple-dark) 100%);
+    border-radius:50% 50% 50% 50% / 58% 58% 42% 42%;
+    font-size:inherit; font-weight:800; color:var(--cell-text);
+    text-shadow:0 1px 3px rgba(0,0,0,.55), 0 0 6px rgba(0,0,0,.35);
+    box-shadow:inset 0 -4px 7px rgba(0,0,0,.28), inset 0 3px 4px rgba(255,255,255,.28);
+    transition:transform .15s, opacity .25s, background .1s;
+  }
+  .apple::before{
+    content:''; position:absolute; top:-22%; left:50%; width:9%; height:26%;
+    background:var(--stem); border-radius:2px;
+    transform:translateX(-50%) rotate(-14deg); transform-origin:bottom center;
+  }
+  .apple::after{
+    content:''; position:absolute; top:-16%; left:56%; width:32%; height:20%;
+    background:var(--leaf); border-radius:0 100% 10% 100%;
+    transform:rotate(-25deg); transform-origin:bottom left;
+  }
+  .apple.empty{
+    background:transparent; color:transparent; pointer-events:none;
+    box-shadow:none;
+  }
+  .apple.empty::before, .apple.empty::after{
+    display:none;
+  }
+  .apple.selected{
+    color:#fff; transform:scale(0.94);
+    box-shadow:0 0 0 3px #fff, inset 0 -4px 7px rgba(0,0,0,.28), inset 0 3px 4px rgba(255,255,255,.28);
+  }
+  .apple.removing{
+    opacity:0; transform:scale(0.4) rotate(20deg);
+  }
+  .apple.hint{
+    box-shadow:0 0 0 3px #ffd23f, 0 0 14px rgba(255,210,63,.7);
+    animation:hint-pulse .5s ease-in-out 2;
+  }
+  @keyframes hint-pulse{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.08); }
+  }
+  .apple.shuffled{
+    animation:hint-pulse .35s ease-in-out 1;
+  }
+  .select-box{
+    position:absolute; pointer-events:none; border-radius:10px;
+    border:3px solid var(--bad); box-shadow:0 0 0 1px rgba(255,255,255,.9);
+    background:rgba(255,107,74,.16);
+    transition:border-color .1s, background .1s;
+  }
+  .select-box.ok{ border-color:var(--ok); background:rgba(74,222,128,.2); }
+  .hidden{display:none !important;}
+  .controls{margin-top:16px; display:flex; gap:10px;}
+  button{
+    background:var(--apple); color:#2a0a0a; border:none; padding:10px 26px;
+    border-radius:10px; font-weight:700; font-size:14px; cursor:pointer;
+  }
+  button:hover{filter:brightness(1.08);}
+  button.secondary{
+    background:transparent; color:#ffd23f; border:1px solid #ffd23f;
+  }
+  button.secondary:hover{ background:rgba(255,210,63,.12); filter:none; }
+  button.secondary:disabled{
+    opacity:.4; cursor:default; background:transparent; filter:none;
+  }
+  .overlay{
+    position:fixed; inset:0; background:rgba(6,7,11,.88); backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    z-index:20; text-align:center; padding:20px;
+  }
+  .overlay h2{font-size:26px; margin-bottom:10px;}
+  .overlay p{color:var(--sub); font-size:14px; margin-bottom:20px; max-width:320px; line-height:1.6;}
+</style>
+</head>
+<body>
+<h1>🍎 사과 게임</h1>
+<div class="hud">
+  <div>점수 <b id="score">0</b></div>
+  <div>최고 기록 <b id="best">0</b></div>
+  <div>시간 <b id="time">120</b></div>
+</div>
+
+<div class="board-area">
+  <div class="board-wrap">
+    <div id="board"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="hintBtn" class="secondary">힌트</button>
+  <button id="restartBtn">다시 시작</button>
+</div>
+
+<div class="overlay" id="startOverlay">
+  <h2>사과 게임</h2>
+  <p>드래그해서 사각형 안 사과들의 합이 10이 되면 사과가 사라져요.<br>제한 시간 안에 최대한 많은 사과를 없애보세요!</p>
+  <button id="startBtn">게임 시작</button>
+</div>
+
+<div class="overlay hidden" id="overOverlay">
+  <h2 id="overTitle">시간 종료!</h2>
+  <p id="overScore">점수: 0</p>
+  <button id="restartBtn2">다시 시작</button>
+</div>
+
+<script>
+(function(){
+  const COLS = 17, ROWS = 8, DURATION = 120, GAP = 3;
+
+  const boardEl = document.getElementById('board');
+  const wrapEl = document.querySelector('.board-wrap');
+  const areaEl = document.querySelector('.board-area');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const timeEl = document.getElementById('time');
+  const startOverlay = document.getElementById('startOverlay');
+  const overOverlay = document.getElementById('overOverlay');
+  const overTitleEl = document.getElementById('overTitle');
+  const overScoreEl = document.getElementById('overScore');
+
+  let best = parseInt(localStorage.getItem('apple_game_best') || '0', 10);
+  bestEl.textContent = best;
+
+  boardEl.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+
+  let cells = [];      // {r,c,val,removed,el}
+  let cellEls = [];    // 2d array [r][c] -> element
+  let score = 0, timeLeft = DURATION, timerId = null, running = false;
+  let dragging = false, startCell = null, curCell = null, selectBoxEl = null;
+  let hintTimeoutId = null;
+
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    cells = [];
+    cellEls = [];
+    selectBoxEl = null;
+    clearTimeout(hintTimeoutId);
+    for(let r=0;r<ROWS;r++){
+      cellEls.push([]);
+      for(let c=0;c<COLS;c++){
+        const val = 1 + Math.floor(Math.random()*9);
+        const el = document.createElement('div');
+        el.className = 'apple';
+        el.textContent = val;
+        el.dataset.r = r;
+        el.dataset.c = c;
+        boardEl.appendChild(el);
+        const cell = {r,c,val,removed:false,el};
+        cells.push(cell);
+        cellEls[r].push(cell);
+      }
+    }
+  }
+
+  function reshuffleActiveCells(){
+    const active = cells.filter(c=>!c.removed);
+    const vals = active.map(c=>c.val);
+    for(let i=vals.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [vals[i],vals[j]] = [vals[j],vals[i]];
+    }
+    active.forEach((cell,i)=>{
+      cell.val = vals[i];
+      cell.el.textContent = vals[i];
+      cell.el.classList.remove('shuffled');
+      void cell.el.offsetWidth;
+      cell.el.classList.add('shuffled');
+    });
+  }
+
+  function rerollActiveCells(){
+    const active = cells.filter(c=>!c.removed);
+    active.forEach(cell=>{
+      cell.val = 1 + Math.floor(Math.random()*9);
+      cell.el.textContent = cell.val;
+      cell.el.classList.remove('shuffled');
+      void cell.el.offsetWidth;
+      cell.el.classList.add('shuffled');
+    });
+  }
+
+  function cellAt(r,c){
+    if(r<0||r>=ROWS||c<0||c>=COLS) return null;
+    return cellEls[r][c];
+  }
+
+  function gridMetrics(rect){
+    const cw = (rect.width - GAP*(COLS-1)) / COLS;
+    const ch = (rect.height - GAP*(ROWS-1)) / ROWS;
+    return {cw, ch};
+  }
+
+  function pointToCell(clientX, clientY){
+    const hit = document.elementFromPoint(clientX, clientY);
+    const appleEl = hit && hit.closest && hit.closest('.apple');
+    if(appleEl && appleEl.dataset.r !== undefined){
+      return {r: +appleEl.dataset.r, c: +appleEl.dataset.c};
+    }
+    // pointer is over a gap/padding/edge (or off the board during a fast drag) — fall back to an approximation
+    const rect = boardEl.getBoundingClientRect();
+    const {cw, ch} = gridMetrics(rect);
+    let c = Math.floor((clientX - rect.left) / (cw + GAP));
+    let r = Math.floor((clientY - rect.top) / (ch + GAP));
+    c = Math.max(0, Math.min(COLS-1, c));
+    r = Math.max(0, Math.min(ROWS-1, r));
+    return {r,c};
+  }
+
+  function ensureSelectBox(){
+    if(!selectBoxEl){
+      selectBoxEl = document.createElement('div');
+      selectBoxEl.className = 'select-box hidden';
+      boardEl.appendChild(selectBoxEl);
+    }
+    return selectBoxEl;
+  }
+
+  function sizeBoard(){
+    const SCALE = 0.85;
+    const availW = areaEl.clientWidth * SCALE;
+    const availH = areaEl.clientHeight * SCALE;
+    const PAD = 8, BORDER = 1;
+    const frame = 2 * (PAD + BORDER);
+
+    function heightForWidth(w){
+      const contentW = w - frame;
+      const cellW = (contentW - GAP*(COLS-1)) / COLS;
+      return frame + ROWS*cellW + GAP*(ROWS-1);
+    }
+
+    let w = availW;
+    if(heightForWidth(w) > availH){
+      w = (availH - frame - GAP*(ROWS-1)) * COLS/ROWS + frame + GAP*(COLS-1);
+    }
+    w = Math.max(w, COLS * 18);
+    wrapEl.style.width = w + 'px';
+
+    const cellW = (w - frame - GAP*(COLS-1)) / COLS;
+    boardEl.style.fontSize = Math.max(8, Math.min(24, cellW * 0.48)) + 'px';
+  }
+
+  function updateSelection(){
+    const minR = Math.min(startCell.r, curCell.r);
+    const maxR = Math.max(startCell.r, curCell.r);
+    const minC = Math.min(startCell.c, curCell.c);
+    const maxC = Math.max(startCell.c, curCell.c);
+
+    let sum = 0, count = 0;
+    cells.forEach(cell=>{
+      const inBox = cell.r>=minR && cell.r<=maxR && cell.c>=minC && cell.c<=maxC;
+      const active = inBox && !cell.removed;
+      cell.el.classList.toggle('selected', active);
+      if(active){ sum += cell.val; count++; }
+    });
+
+    const box = ensureSelectBox();
+    const rect = boardEl.getBoundingClientRect();
+    const {cw, ch} = gridMetrics(rect);
+    box.style.left = (minC*(cw+GAP)) + 'px';
+    box.style.top = (minR*(ch+GAP)) + 'px';
+    box.style.width = ((maxC-minC+1)*cw + (maxC-minC)*GAP) + 'px';
+    box.style.height = ((maxR-minR+1)*ch + (maxR-minR)*GAP) + 'px';
+    box.classList.remove('hidden');
+    box.classList.toggle('ok', sum===10 && count>0);
+
+    return {minR,maxR,minC,maxC,sum,count};
+  }
+
+  function clearSelectionVisuals(){
+    cells.forEach(cell=>cell.el.classList.remove('selected'));
+    if(selectBoxEl) selectBoxEl.classList.add('hidden');
+  }
+
+  function findHint(){
+    const valP = Array.from({length:ROWS+1}, ()=>new Array(COLS+1).fill(0));
+    const cntP = Array.from({length:ROWS+1}, ()=>new Array(COLS+1).fill(0));
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        const cell = cellEls[r][c];
+        const v = cell.removed ? 0 : cell.val;
+        const n = cell.removed ? 0 : 1;
+        valP[r+1][c+1] = valP[r][c+1] + valP[r+1][c] - valP[r][c] + v;
+        cntP[r+1][c+1] = cntP[r][c+1] + cntP[r+1][c] - cntP[r][c] + n;
+      }
+    }
+    function rangeSum(P,r1,c1,r2,c2){
+      return P[r2+1][c2+1] - P[r1][c2+1] - P[r2+1][c1] + P[r1][c1];
+    }
+    let best = null, bestCount = Infinity, bestArea = Infinity;
+    for(let r1=0;r1<ROWS;r1++){
+      for(let r2=r1;r2<ROWS;r2++){
+        for(let c1=0;c1<COLS;c1++){
+          for(let c2=c1;c2<COLS;c2++){
+            const activeCount = rangeSum(cntP,r1,c1,r2,c2);
+            if(activeCount === 0 || activeCount > bestCount) continue;
+            if(rangeSum(valP,r1,c1,r2,c2) !== 10) continue;
+            const area = (r2-r1+1)*(c2-c1+1);
+            if(activeCount < bestCount || area < bestArea){
+              best = {r1,r2,c1,c2};
+              bestCount = activeCount;
+              bestArea = area;
+            }
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function ensureSolvable(){
+    const active = cells.filter(c=>!c.removed);
+    if(active.length === 0) return null;
+    if(active.length === 1){
+      const cell = active[0];
+      if(cell.val !== 10){
+        cell.val = 10;
+        cell.el.textContent = 10;
+        cell.el.classList.remove('shuffled');
+        void cell.el.offsetWidth;
+        cell.el.classList.add('shuffled');
+      }
+    }
+    let found = findHint();
+    if(found) return found;
+    reshuffleActiveCells();
+    found = findHint();
+    for(let attempt=0; !found && attempt<100 && cells.some(c=>!c.removed); attempt++){
+      rerollActiveCells();
+      found = findHint();
+    }
+    return found;
+  }
+
+  function showHint(){
+    if(!running || dragging) return;
+    const found = ensureSolvable();
+    if(!found) return;
+    clearTimeout(hintTimeoutId);
+    const hinted = [];
+    for(let r=found.r1;r<=found.r2;r++){
+      for(let c=found.c1;c<=found.c2;c++){
+        const cell = cellEls[r][c];
+        if(cell.removed) continue;
+        cell.el.classList.add('hint');
+        hinted.push(cell.el);
+      }
+    }
+    hintTimeoutId = setTimeout(()=>{
+      hinted.forEach(el=>el.classList.remove('hint'));
+    }, 1200);
+  }
+
+  function onPointerDown(e){
+    if(!running) return;
+    dragging = true;
+    boardEl.setPointerCapture(e.pointerId);
+    startCell = pointToCell(e.clientX, e.clientY);
+    curCell = startCell;
+    updateSelection();
+  }
+
+  function onPointerMove(e){
+    if(!dragging) return;
+    curCell = pointToCell(e.clientX, e.clientY);
+    updateSelection();
+  }
+
+  function onPointerUp(e){
+    if(!dragging) return;
+    dragging = false;
+    const {sum, count} = updateSelection();
+    if(sum === 10 && count > 0){
+      cells.forEach(cell=>{
+        if(cell.el.classList.contains('selected') && !cell.removed){
+          cell.removed = true;
+          cell.el.classList.add('removing');
+          setTimeout(()=>cell.el.classList.add('empty'), 250);
+        }
+      });
+      score += count;
+      scoreEl.textContent = score;
+      setTimeout(()=>{
+        if(cells.length > 0 && cells.every(c=>c.removed)){
+          winGame();
+        } else {
+          ensureSolvable();
+        }
+      }, 260);
+    }
+    clearSelectionVisuals();
+  }
+
+  wrapEl.addEventListener('pointerdown', onPointerDown);
+  wrapEl.addEventListener('pointermove', onPointerMove);
+  wrapEl.addEventListener('pointerup', onPointerUp);
+  wrapEl.addEventListener('pointercancel', onPointerUp);
+
+  function tick(){
+    timeLeft--;
+    timeEl.textContent = timeLeft;
+    timeEl.classList.toggle('time-warn', timeLeft <= 10);
+    if(timeLeft <= 0) endGame();
+  }
+
+  function startGame(){
+    score = 0;
+    timeLeft = DURATION;
+    scoreEl.textContent = 0;
+    timeEl.textContent = DURATION;
+    timeEl.classList.remove('time-warn');
+    dragging = false;
+    running = true;
+    buildBoard();
+    ensureSolvable();
+    startOverlay.classList.add('hidden');
+    overOverlay.classList.add('hidden');
+    clearInterval(timerId);
+    timerId = setInterval(tick, 1000);
+  }
+
+  function finishGame(normalTitle, recordTitle){
+    running = false;
+    clearInterval(timerId);
+    clearSelectionVisuals();
+    clearTimeout(hintTimeoutId);
+    cells.forEach(cell=>cell.el.classList.remove('hint'));
+    if(score > best){
+      best = score;
+      localStorage.setItem('apple_game_best', best);
+      bestEl.textContent = best;
+      overTitleEl.textContent = recordTitle;
+    } else {
+      overTitleEl.textContent = normalTitle;
+    }
+    overScoreEl.textContent = '점수: ' + score;
+    overOverlay.classList.remove('hidden');
+  }
+
+  function endGame(){
+    finishGame('시간 종료!', '신기록!');
+  }
+
+  function winGame(){
+    finishGame('사과를 모두 없앴어요! 🎉', '사과를 모두 없앴어요! 신기록! 🎉');
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn2').addEventListener('click', startGame);
+  document.getElementById('hintBtn').addEventListener('click', showHint);
+
+  window.addEventListener('resize', sizeBoard);
+
+  buildBoard();
+  sizeBoard();
+})();
+</script>
+</body>
+</html>
