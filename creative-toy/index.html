@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>파티클 플레이그라운드</title>
+<style>
+  html,body{margin:0; padding:0; overflow:hidden; background:#05060a; height:100%;}
+  canvas{display:block; touch-action:none;}
+  .ui{
+    position:fixed; top:16px; left:16px; z-index:10;
+    display:flex; gap:10px; flex-wrap:wrap; max-width:calc(100% - 32px);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .ui button, .ui select{
+    background:rgba(255,255,255,.08); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.15); color:#eee;
+    padding:9px 14px; border-radius:10px; font-size:13px; cursor:pointer;
+  }
+  .ui button:hover{background:rgba(255,255,255,.16);}
+  .ui button.active{background:rgba(255,107,74,.85); border-color:transparent; font-weight:600;}
+  .hint{
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+    color:rgba(255,255,255,.4); font-size:12px; font-family:-apple-system,sans-serif;
+    z-index:10; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <button data-mode="trail" class="active">트레일</button>
+  <button data-mode="burst">버스트</button>
+  <button data-mode="orbit">오빗</button>
+  <button id="clearBtn">지우기</button>
+</div>
+<div class="hint">화면을 드래그하거나 클릭해보세요 · 손가락 터치도 지원</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  let particles = [];
+  let mode = 'trail';
+  let pointer = {x: W/2, y: H/2, down: false, px: W/2, py: H/2};
+  const hueBase = { trail: 20, burst: 260, orbit: 160 };
+  let hueShift = 0;
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  class Particle{
+    constructor(x,y,vx,vy,life,hue,size){
+      this.x=x; this.y=y; this.vx=vx; this.vy=vy;
+      this.life=life; this.maxLife=life; this.hue=hue; this.size=size;
+    }
+    update(){
+      this.x += this.vx;
+      this.y += this.vy;
+      if(mode==='orbit'){
+        const dx = pointer.x - this.x, dy = pointer.y - this.y;
+        const dist = Math.hypot(dx,dy) || 1;
+        this.vx += (dx/dist) * 0.15;
+        this.vy += (dy/dist) * 0.15;
+        this.vx *= 0.98; this.vy *= 0.98;
+      } else {
+        this.vx *= 0.985; this.vy *= 0.985;
+        this.vy += 0.01;
+      }
+      this.life--;
+    }
+    draw(){
+      const t = Math.max(0, this.life / this.maxLife);
+      if(t <= 0) return;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * t, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${this.hue}, 90%, ${55+t*20}%, ${t})`;
+      ctx.fill();
+    }
+  }
+
+  function spawnTrail(x,y){
+    const hue = (hueBase.trail + hueShift) % 360;
+    for(let i=0;i<3;i++){
+      particles.push(new Particle(
+        x + rand(-6,6), y + rand(-6,6),
+        rand(-1.2,1.2), rand(-1.2,1.2),
+        rand(50,100), hue + rand(-20,20), rand(3,7)
+      ));
+    }
+  }
+  function spawnBurst(x,y){
+    const hue = (hueBase.burst + hueShift) % 360;
+    const n = 40;
+    for(let i=0;i<n;i++){
+      const a = (Math.PI*2*i)/n + rand(-0.1,0.1);
+      const speed = rand(2,7);
+      particles.push(new Particle(
+        x, y, Math.cos(a)*speed, Math.sin(a)*speed,
+        rand(50,90), hue + rand(-30,30), rand(2,4)
+      ));
+    }
+  }
+  function spawnOrbit(x,y){
+    const hue = (hueBase.orbit + hueShift) % 360;
+    for(let i=0;i<4;i++){
+      particles.push(new Particle(
+        x + rand(-30,30), y + rand(-30,30),
+        rand(-2,2), rand(-2,2),
+        rand(120,200), hue + rand(-20,20), rand(2,4)
+      ));
+    }
+  }
+
+  function handleMove(x,y){
+    pointer.px = pointer.x; pointer.py = pointer.y;
+    pointer.x = x; pointer.y = y;
+    if(mode==='trail' && pointer.down) spawnTrail(x,y);
+    if(mode==='orbit' && pointer.down) spawnOrbit(x,y);
+  }
+  function handleDown(x,y){
+    pointer.down = true;
+    pointer.x = x; pointer.y = y;
+    if(mode==='burst') spawnBurst(x,y);
+    if(mode==='trail'){ spawnTrail(x,y); spawnTrail(x,y); spawnTrail(x,y); spawnTrail(x,y); }
+    if(mode==='orbit') spawnOrbit(x,y);
+  }
+  function handleUp(){ pointer.down = false; }
+
+  canvas.addEventListener('mousedown', e=>handleDown(e.clientX,e.clientY));
+  canvas.addEventListener('mousemove', e=>handleMove(e.clientX,e.clientY));
+  window.addEventListener('mouseup', handleUp);
+  canvas.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    const t = e.touches[0];
+    handleDown(t.clientX, t.clientY);
+  }, {passive:false});
+  canvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    const t = e.touches[0];
+    handleMove(t.clientX, t.clientY);
+  }, {passive:false});
+  canvas.addEventListener('touchend', e=>{ e.preventDefault(); handleUp(); }, {passive:false});
+
+  document.querySelectorAll('.ui button[data-mode]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.ui button[data-mode]').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      mode = btn.dataset.mode;
+    });
+  });
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    particles = [];
+    ctx.clearRect(0,0,W,H);
+  });
+
+  // ambient auto-spawn so it feels alive even without interaction
+  let autoTimer = 0;
+
+  function loop(){
+    hueShift += 0.15;
+    ctx.fillStyle = 'rgba(5,6,10,0.15)';
+    ctx.fillRect(0,0,W,H);
+
+    autoTimer++;
+    if(autoTimer % 20 === 0 && !pointer.down){
+      const x = W/2 + Math.sin(Date.now()*0.0006)*W*0.3;
+      const y = H/2 + Math.cos(Date.now()*0.0008)*H*0.25;
+      if(mode==='burst' ) { /* no auto burst, too noisy */ }
+      spawnTrail(x,y);
+    }
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.update();
+      p.draw();
+      if(p.life<=0) particles.splice(i,1);
+    }
+    if(particles.length>1400) particles.splice(0, particles.length-1400);
+
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>

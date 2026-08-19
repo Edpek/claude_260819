@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네온 스네이크</title>
+<style>
+  :root{
+    --bg:#0a0b10; --grid:#12141c; --snake:#4ade80; --snake2:#22c55e;
+    --food:#ff6b4a; --text:#e8eaed; --sub:#8a8f98;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none;
+  }
+  h1{font-size:16px; font-weight:600; letter-spacing:1px; margin-bottom:4px; color:var(--snake);
+     text-shadow:0 0 12px rgba(74,222,128,.6);}
+  .scoreboard{display:flex; gap:24px; margin-bottom:12px; font-size:13px; color:var(--sub);}
+  .scoreboard b{color:var(--text); font-size:15px;}
+  #gameCanvas{
+    background:var(--grid); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.5);
+    border:1px solid #22262f;
+  }
+  .overlay{
+    position:fixed; inset:0; background:rgba(6,7,11,.85); backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center; flex-direction:column;
+    z-index:20; text-align:center; padding:20px;
+  }
+  .overlay h2{font-size:26px; margin-bottom:10px;}
+  .overlay p{color:var(--sub); font-size:14px; margin-bottom:20px;}
+  .overlay button{
+    background:var(--snake); color:#062012; border:none; padding:12px 30px;
+    border-radius:10px; font-weight:700; font-size:15px; cursor:pointer;
+  }
+  .overlay button:hover{filter:brightness(1.1);}
+  .dpad{
+    display:none; margin-top:16px; grid-template-columns:repeat(3,56px); grid-template-rows:repeat(3,56px);
+    gap:6px;
+  }
+  .dpad button{
+    background:#171a21; border:1px solid #2a2e38; color:var(--text); font-size:20px;
+    border-radius:12px;
+  }
+  @media (max-width:640px){
+    .dpad{display:grid;}
+  }
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<h1>NEON SNAKE</h1>
+<div class="scoreboard">
+  <div>점수 <b id="score">0</b></div>
+  <div>최고 기록 <b id="best">0</b></div>
+</div>
+<canvas id="gameCanvas" width="400" height="400"></canvas>
+
+<div class="dpad">
+  <div></div><button id="up">▲</button><div></div>
+  <button id="left">◀</button><div></div><button id="right">▶</button>
+  <div></div><button id="down">▼</button><div></div>
+</div>
+
+<div class="overlay" id="startOverlay">
+  <h2>네온 스네이크</h2>
+  <p>방향키 또는 스와이프로 조작하세요</p>
+  <button id="startBtn">게임 시작</button>
+</div>
+
+<div class="overlay hidden" id="overOverlay">
+  <h2 id="overTitle">게임 오버</h2>
+  <p id="overScore">점수: 0</p>
+  <button id="restartBtn">다시 시작</button>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const GRID = 20;
+  const CELLS = canvas.width / GRID;
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const startOverlay = document.getElementById('startOverlay');
+  const overOverlay = document.getElementById('overOverlay');
+  const overScoreEl = document.getElementById('overScore');
+
+  let best = parseInt(localStorage.getItem('snake_best') || '0', 10);
+  bestEl.textContent = best;
+
+  let snake, dir, nextDir, food, score, speed, loopId, running;
+
+  function resetState(){
+    snake = [{x:8,y:10},{x:7,y:10},{x:6,y:10}];
+    dir = {x:1,y:0};
+    nextDir = {x:1,y:0};
+    score = 0;
+    speed = 130;
+    scoreEl.textContent = 0;
+    placeFood();
+  }
+
+  function placeFood(){
+    let valid = false;
+    while(!valid){
+      food = { x: Math.floor(Math.random()*CELLS), y: Math.floor(Math.random()*CELLS) };
+      valid = !snake.some(s => s.x===food.x && s.y===food.y);
+    }
+  }
+
+  function draw(){
+    ctx.fillStyle = '#12141c';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    for(let i=1;i<CELLS;i++){
+      ctx.beginPath(); ctx.moveTo(i*GRID,0); ctx.lineTo(i*GRID,canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,i*GRID); ctx.lineTo(canvas.width,i*GRID); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#ff6b4a';
+    ctx.shadowColor = '#ff6b4a';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(food.x*GRID+GRID/2, food.y*GRID+GRID/2, GRID/2-3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    snake.forEach((seg,i)=>{
+      ctx.fillStyle = i===0 ? '#4ade80' : '#22c55e';
+      ctx.shadowColor = '#4ade80';
+      ctx.shadowBlur = i===0 ? 10 : 4;
+      const pad = i===0 ? 1 : 2;
+      ctx.fillRect(seg.x*GRID+pad, seg.y*GRID+pad, GRID-pad*2, GRID-pad*2);
+    });
+    ctx.shadowBlur = 0;
+  }
+
+  function step(){
+    dir = nextDir;
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    if(head.x<0 || head.x>=CELLS || head.y<0 || head.y>=CELLS || snake.some(s=>s.x===head.x && s.y===head.y)){
+      gameOver();
+      return;
+    }
+
+    snake.unshift(head);
+
+    if(head.x===food.x && head.y===food.y){
+      score++;
+      scoreEl.textContent = score;
+      placeFood();
+      speed = Math.max(60, speed - 2.5);
+      restartLoop();
+    } else {
+      snake.pop();
+    }
+    draw();
+  }
+
+  function restartLoop(){
+    clearInterval(loopId);
+    loopId = setInterval(step, speed);
+  }
+
+  function gameOver(){
+    running = false;
+    clearInterval(loopId);
+    if(score > best){
+      best = score;
+      localStorage.setItem('snake_best', best);
+      bestEl.textContent = best;
+      document.getElementById('overTitle').textContent = '신기록!';
+    } else {
+      document.getElementById('overTitle').textContent = '게임 오버';
+    }
+    overScoreEl.textContent = '점수: ' + score;
+    overOverlay.classList.remove('hidden');
+  }
+
+  function startGame(){
+    resetState();
+    running = true;
+    startOverlay.classList.add('hidden');
+    overOverlay.classList.add('hidden');
+    draw();
+    restartLoop();
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn').addEventListener('click', startGame);
+
+  function setDir(x,y){
+    if(!running) return;
+    if(dir.x === -x && dir.y === -y) return;
+    if(x === dir.x && y === dir.y) return;
+    nextDir = {x,y};
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    switch(e.key){
+      case 'ArrowUp': case 'w': setDir(0,-1); break;
+      case 'ArrowDown': case 's': setDir(0,1); break;
+      case 'ArrowLeft': case 'a': setDir(-1,0); break;
+      case 'ArrowRight': case 'd': setDir(1,0); break;
+    }
+  });
+
+  document.getElementById('up').addEventListener('click', ()=>setDir(0,-1));
+  document.getElementById('down').addEventListener('click', ()=>setDir(0,1));
+  document.getElementById('left').addEventListener('click', ()=>setDir(-1,0));
+  document.getElementById('right').addEventListener('click', ()=>setDir(1,0));
+
+  let touchStart = null;
+  canvas.addEventListener('touchstart', e=>{
+    const t = e.touches[0];
+    touchStart = {x:t.clientX, y:t.clientY};
+  }, {passive:true});
+  canvas.addEventListener('touchend', e=>{
+    if(!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    if(Math.abs(dx) > Math.abs(dy)){
+      setDir(dx > 0 ? 1 : -1, 0);
+    } else {
+      setDir(0, dy > 0 ? 1 : -1);
+    }
+    touchStart = null;
+  }, {passive:true});
+
+  resetState();
+  draw();
+})();
+</script>
+</body>
+</html>
